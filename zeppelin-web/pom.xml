@@ -88,7 +88,7 @@
             </goals>
             <configuration>
               <skip>${web.e2e.enabled}</skip>
-              <arguments>install --no-lockfile</arguments>
+              <arguments>install --unsafe-perm --no-lockfile</arguments>
             </configuration>
           </execution>
 
