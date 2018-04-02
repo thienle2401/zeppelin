@@ -39,6 +39,7 @@
     <hadoop.version>2.7.3</hadoop.version>
     <commons.lang3.version>3.4</commons.lang3.version>
     <commons.vfs2.version>2.0</commons.vfs2.version>
+    <gcs.storage.version>1.14.0</gcs.storage.version>
     <aws.sdk.s3.version>1.10.62</aws.sdk.s3.version>
     <adl.sdk.version>2.1.4</adl.sdk.version>
     <jackrabbit.webdav.version>1.5.2</jackrabbit.webdav.version>
@@ -51,6 +52,7 @@
 
     <!--test library versions-->
     <google.truth.version>0.27</google.truth.version>
+    <google.testing.nio.version>0.32.0-alpha</google.testing.nio.version>
   </properties>
 
   <dependencies>
@@ -115,9 +117,83 @@
     </dependency>
 
     <dependency>
+      <groupId>com.google.cloud</groupId>
+      <artifactId>google-cloud-storage</artifactId>
+      <version>${gcs.storage.version}</version>
+      <exclusions>
+        <exclusion>
+          <groupId>com.google.code.findbugs</groupId>
+          <artifactId>jsr305</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>com.google.protobuf</groupId>
+          <artifactId>protobuf-java</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>com.google.guava</groupId>
+          <artifactId>guava</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>com.google.api</groupId>
+          <artifactId>api-common</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>com.google.http-client</groupId>
+          <artifactId>google-http-client-jackson2</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>com.google.http-client</groupId>
+          <artifactId>google-http-client</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>org.codehaus.jackson</groupId>
+          <artifactId>jackson-core-asl</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+
+    <dependency>
+      <groupId>com.google.api</groupId>
+      <artifactId>api-common</artifactId>
+      <version>1.2.0</version>
+      <exclusions>
+        <exclusion>
+          <groupId>com.google.guava</groupId>
+          <artifactId>guava</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>com.google.code.findbugs</groupId>
+          <artifactId>jsr305</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+
+    <dependency>
+      <groupId>com.google.http-client</groupId>
+      <artifactId>google-http-client-jackson2</artifactId>
+      <version>1.23.0</version>
+      <exclusions>
+        <exclusion>
+          <groupId>com.fasterxml.jackson.core</groupId>
+          <artifactId>jackson-core</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>com.google.code.findbugs</groupId>
+          <artifactId>jsr305</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+
+    <dependency>
       <groupId>com.amazonaws</groupId>
       <artifactId>aws-java-sdk-s3</artifactId>
       <version>${aws.sdk.s3.version}</version>
+      <exclusions>
+        <exclusion>
+          <groupId>joda-time</groupId>
+          <artifactId>joda-time</artifactId>
+        </exclusion>
+      </exclusions>
     </dependency>
 
     <dependency>
@@ -146,7 +222,7 @@
     <dependency>
       <groupId>com.google.guava</groupId>
       <artifactId>guava</artifactId>
-      <version>15.0</version>
+      <version>20.0</version>
     </dependency>
 
     <dependency>
@@ -228,6 +304,23 @@
     </dependency>
 
     <dependency>
+      <groupId>com.google.cloud</groupId>
+      <artifactId>google-cloud-nio</artifactId>
+      <version>${google.testing.nio.version}</version>
+      <scope>test</scope>
+      <exclusions>
+        <exclusion>
+          <groupId>com.google.code.findbugs</groupId>
+          <artifactId>jsr305</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>com.google.guava</groupId>
+          <artifactId>guava</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+
+    <dependency>
       <groupId>com.google.truth</groupId>
       <artifactId>truth</artifactId>
       <version>${google.truth.version}</version>
@@ -297,6 +390,25 @@
             <java.io.tmpdir>${project.build.directory}/tmp</java.io.tmpdir>
           </systemProperties>
         </configuration>
+      </plugin>
+
+      <!-- publish test jar as well so that zeppelin-server module can use it -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <version>3.0.2</version>
+        <executions>
+          <execution>
+            <goals>
+              <goal>test-jar</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-dependency-plugin</artifactId>
       </plugin>
     </plugins>
   </build>
@@ -602,31 +714,6 @@
         </dependency>
 
         <dependency>
-          <groupId>org.apache.zeppelin</groupId>
-          <artifactId>zeppelin-spark_2.10</artifactId>
-          <version>${project.version}</version>
-          <scope>test</scope>
-          <exclusions>
-            <exclusion>
-              <groupId>com.google.protobuf</groupId>
-              <artifactId>protobuf-java</artifactId>
-            </exclusion>
-            <exclusion>
-              <groupId>com.google.guava</groupId>
-              <artifactId>guava</artifactId>
-            </exclusion>
-            <exclusion>
-              <groupId>com.google.errorprone</groupId>
-              <artifactId>error_prone_annotations</artifactId>
-            </exclusion>
-            <exclusion>
-              <groupId>io.grpc</groupId>
-              <artifactId>grpc-context</artifactId>
-            </exclusion>
-          </exclusions>
-        </dependency>
-
-        <dependency>
           <groupId>org.apache.hadoop</groupId>
           <artifactId>hadoop-azure</artifactId>
           <version>${hadoop.version}</version>
@@ -669,6 +756,10 @@
           <artifactId>hadoop-aws</artifactId>
           <version>${hadoop.version}</version>
           <exclusions>
+            <exclusion>
+              <groupId>com.amazonaws</groupId>
+              <artifactId>aws-java-sdk</artifactId>
+            </exclusion>
             <exclusion>
               <groupId>com.fasterxml.jackson.core</groupId>
               <artifactId>jackson-annotations</artifactId>
@@ -789,6 +880,10 @@
           <artifactId>hadoop-aws</artifactId>
           <version>${hadoop.version}</version>
           <exclusions>
+            <exclusion>
+              <groupId>com.amazonaws</groupId>
+              <artifactId>aws-java-sdk</artifactId>
+            </exclusion>
             <exclusion>
               <groupId>com.fasterxml.jackson.core</groupId>
               <artifactId>jackson-annotations</artifactId>

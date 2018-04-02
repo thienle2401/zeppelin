@@ -34,8 +34,6 @@ import org.apache.zeppelin.dep.DependencyResolver;
 import org.apache.zeppelin.display.AngularObjectRegistryListener;
 import org.apache.zeppelin.helium.ApplicationEventListener;
 import org.apache.zeppelin.interpreter.Interpreter.RegisteredInterpreter;
-import org.apache.zeppelin.interpreter.recovery.FileSystemRecoveryStorage;
-import org.apache.zeppelin.interpreter.recovery.NullRecoveryStorage;
 import org.apache.zeppelin.interpreter.recovery.RecoveryStorage;
 import org.apache.zeppelin.interpreter.remote.RemoteInterpreterProcess;
 import org.apache.zeppelin.interpreter.remote.RemoteInterpreterProcessListener;
@@ -45,10 +43,8 @@ import org.apache.zeppelin.resource.ResourcePool;
 import org.apache.zeppelin.resource.ResourceSet;
 import org.apache.zeppelin.util.ReflectionUtils;
 import org.apache.zeppelin.storage.ConfigStorage;
-import org.apache.zeppelin.storage.FileSystemConfigStorage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.sonatype.aether.RepositoryException;
 import org.sonatype.aether.repository.Proxy;
 import org.sonatype.aether.repository.RemoteRepository;
 import org.sonatype.aether.repository.Authentication;
@@ -192,13 +188,14 @@ public class InterpreterSettingManager {
   }
 
   /**
-   * Load interpreter setting from interpreter-setting.json
+   * Load interpreter setting from interpreter.json
    */
   private void loadFromFile() throws IOException {
     InterpreterInfoSaving infoSaving =
         configStorage.loadInterpreterSettings();
     if (infoSaving == null) {
-      // nothing to read
+      // it is fresh zeppelin instance if there's no interpreter.json, just create interpreter
+      // setting from interpreterSettingTemplates
       for (InterpreterSetting interpreterSettingTemplate : interpreterSettingTemplates.values()) {
         InterpreterSetting interpreterSetting = new InterpreterSetting(interpreterSettingTemplate);
         initInterpreterSetting(interpreterSetting);
@@ -206,6 +203,21 @@ public class InterpreterSettingManager {
       }
       return;
     }
+
+    // update interpreter binding first as we change interpreter setting id in ZEPPELIN-3208.
+    Map<String, List<String>> newBindingMap = new HashMap<>();
+    for (Map.Entry<String, List<String>> entry : infoSaving.interpreterBindings.entrySet()) {
+      String noteId = entry.getKey();
+      List<String> oldSettingIdList = entry.getValue();
+      List<String> newSettingIdList = new ArrayList<>();
+      for (String oldId : oldSettingIdList) {
+        if (infoSaving.interpreterSettings.containsKey(oldId)) {
+          newSettingIdList.add(infoSaving.interpreterSettings.get(oldId).getName());
+        };
+      }
+      newBindingMap.put(noteId, newSettingIdList);
+    }
+    interpreterBindings.putAll(newBindingMap);
 
     //TODO(zjffdu) still ugly (should move all to InterpreterInfoSaving)
     for (InterpreterSetting savedInterpreterSetting : infoSaving.interpreterSettings.values()) {
@@ -242,7 +254,19 @@ public class InterpreterSettingManager {
             interpreterSettingTemplate.getInterpreterRunner());
       } else {
         LOGGER.warn("No InterpreterSetting Template found for InterpreterSetting: "
-            + savedInterpreterSetting.getGroup());
+            + savedInterpreterSetting.getGroup() + ", but it is found in interpreter.json, "
+            + "it would be skipped.");
+        // also delete its binding
+        for (Map.Entry<String, List<String>> entry : interpreterBindings.entrySet()) {
+          List<String> ids = entry.getValue();
+          Iterator<String> iter = ids.iterator();
+          while (iter.hasNext()) {
+            if (iter.next().equals(savedInterpreterSetting.getId())) {
+              iter.remove();
+            }
+          }
+        }
+        continue;
       }
 
       // Overwrite the default InterpreterSetting we registered from InterpreterSetting Templates
@@ -258,13 +282,17 @@ public class InterpreterSettingManager {
       interpreterSettings.put(savedInterpreterSetting.getId(), savedInterpreterSetting);
     }
 
-    interpreterBindings.putAll(infoSaving.interpreterBindings);
-
     if (infoSaving.interpreterRepositories != null) {
       for (RemoteRepository repo : infoSaving.interpreterRepositories) {
         if (!dependencyResolver.getRepos().contains(repo)) {
           this.interpreterRepositories.add(repo);
         }
+      }
+
+      // force interpreter dependencies loading once the
+      // repositories have been loaded.
+      for (InterpreterSetting setting : interpreterSettings.values()) {
+        setting.setDependencies(setting.getDependencies());
       }
     }
   }
@@ -397,18 +425,16 @@ public class InterpreterSettingManager {
         .setIntepreterSettingManager(this)
         .create();
 
-    LOGGER.info("Register InterpreterSettingTemplate & InterpreterSetting: {}",
+    LOGGER.info("Register InterpreterSettingTemplate: {}",
         interpreterSettingTemplate.getName());
     interpreterSettingTemplates.put(interpreterSettingTemplate.getName(),
         interpreterSettingTemplate);
-
-    InterpreterSetting interpreterSetting = new InterpreterSetting(interpreterSettingTemplate);
-    initInterpreterSetting(interpreterSetting);
   }
 
   @VisibleForTesting
   public InterpreterSetting getDefaultInterpreterSetting(String noteId) {
-    return getInterpreterSettings(noteId).get(0);
+    List<InterpreterSetting> allInterpreterSettings = getInterpreterSettings(noteId);
+    return allInterpreterSettings.size() > 0 ? allInterpreterSettings.get(0) : null;
   }
 
   public List<InterpreterSetting> getInterpreterSettings(String noteId) {
@@ -464,7 +490,7 @@ public class InterpreterSettingManager {
           group = replNameSplit[0];
         }
         // when replName is 'name' of interpreter
-        if (defaultSettingName.equals(intpSetting.getName())) {
+        if (intpSetting.getName().equals(defaultSettingName)) {
           editor = intpSetting.getEditorFromSettingByClassName(interpreter.getClassName());
         }
         // when replName is 'alias name' of interpreter or 'group' of interpreter

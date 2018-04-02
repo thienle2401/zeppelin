@@ -96,10 +96,11 @@ import java.util.concurrent.ConcurrentMap;
  * Entry point for Interpreter process.
  * Accepting thrift connections from ZeppelinServer.
  */
-public class RemoteInterpreterServer
-  extends Thread
-  implements RemoteInterpreterService.Iface, AngularObjectRegistryListener {
-  Logger logger = LoggerFactory.getLogger(RemoteInterpreterServer.class);
+public class RemoteInterpreterServer extends Thread
+    implements RemoteInterpreterService.Iface, AngularObjectRegistryListener {
+
+  private static Logger logger = LoggerFactory.getLogger(RemoteInterpreterServer.class);
+
 
   InterpreterGroup interpreterGroup;
   AngularObjectRegistry angularObjectRegistry;
@@ -254,6 +255,9 @@ public class RemoteInterpreterServer
 
   public static void main(String[] args)
       throws TTransportException, InterruptedException, IOException {
+    Class klass = RemoteInterpreterServer.class;
+    URL location = klass.getResource('/' + klass.getName().replace('.', '/') + ".class");
+    logger.info("URL:" + location);
     String callbackHost = null;
     int port = Constants.ZEPPELIN_INTERPRETER_DEFAUlT_PORT;
     String portRange = ":";
@@ -277,7 +281,7 @@ public class RemoteInterpreterServer
     if (interpreterGroup == null) {
       interpreterGroup = new InterpreterGroup(interpreterGroupId);
       angularObjectRegistry = new AngularObjectRegistry(interpreterGroup.getId(), this);
-      hookRegistry = new InterpreterHookRegistry(interpreterGroup.getId());
+      hookRegistry = new InterpreterHookRegistry();
       resourcePool = new DistributedResourcePool(interpreterGroup.getId(), eventClient);
       interpreterGroup.setInterpreterHookRegistry(hookRegistry);
       interpreterGroup.setAngularObjectRegistry(angularObjectRegistry);
@@ -563,8 +567,8 @@ public class RemoteInterpreterServer
       InterpreterHookListener hookListener = new InterpreterHookListener() {
         @Override
         public void onPreExecute(String script) {
-          String cmdDev = interpreter.getHook(noteId, HookType.PRE_EXEC_DEV);
-          String cmdUser = interpreter.getHook(noteId, HookType.PRE_EXEC);
+          String cmdDev = interpreter.getHook(noteId, HookType.PRE_EXEC_DEV.getName());
+          String cmdUser = interpreter.getHook(noteId, HookType.PRE_EXEC.getName());
 
           // User defined hook should be executed before dev hook
           List<String> cmds = Arrays.asList(cmdDev, cmdUser);
@@ -579,8 +583,8 @@ public class RemoteInterpreterServer
 
         @Override
         public void onPostExecute(String script) {
-          String cmdDev = interpreter.getHook(noteId, HookType.POST_EXEC_DEV);
-          String cmdUser = interpreter.getHook(noteId, HookType.POST_EXEC);
+          String cmdDev = interpreter.getHook(noteId, HookType.POST_EXEC_DEV.getName());
+          String cmdUser = interpreter.getHook(noteId, HookType.POST_EXEC.getName());
 
           // User defined hook should be executed after dev hook
           List<String> cmds = Arrays.asList(cmdUser, cmdDev);
@@ -599,6 +603,7 @@ public class RemoteInterpreterServer
 
     @Override
     protected Object jobRun() throws Throwable {
+      ClassLoader currentThreadContextClassloader = Thread.currentThread().getContextClassLoader();
       try {
         InterpreterContext.set(context);
 
@@ -615,9 +620,16 @@ public class RemoteInterpreterServer
 
         if (result == null || result.code() == Code.SUCCESS) {
           // Add hooks to script from registry.
-          // Global scope first, followed by notebook scope
-          processInterpreterHooks(null);
+          // note scope first, followed by global scope.
+          // Here's the code after hooking:
+          //     global_pre_hook
+          //     note_pre_hook
+          //     script
+          //     note_post_hook
+          //     global_post_hook
           processInterpreterHooks(context.getNoteId());
+          processInterpreterHooks(null);
+          logger.debug("Script after hooks: " + script);
           result = interpreter.interpret(script, context);
         }
 
@@ -647,6 +659,7 @@ public class RemoteInterpreterServer
         }
         return new InterpreterResult(result.code(), resultMessages);
       } finally {
+        Thread.currentThread().setContextClassLoader(currentThreadContextClassloader);
         InterpreterContext.remove();
       }
     }
